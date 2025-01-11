@@ -335,3 +335,17 @@ function testVSFTPD {
     
     printFooter
 }
+
+# Call the functions to execute the checks
+checkSELinux
+listUsersGroups
+listRootCreatedGroups
+checkNetworkServices
+checkGit
+retrieveServerInfo
+testLDAPServices
+testHTTPDandNetwork
+testVSFTPD
+
+# Exit the script
+exit 0
