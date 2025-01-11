@@ -49,6 +49,22 @@ function listUsersGroups {
     printFooter
 }
 
+# 3. List groups created by root
+
+function listRootCreatedGroups {
+    printHeader "Root-Created Groups" "Details"
+    # List all groups created by the root user (typically non-system groups with GID > 1000)
+    GROUPS=$(awk -F: '$3 >= 1000 {print $1}' /etc/group)
+    if [[ -z "$GROUPS" ]]; then
+        printRow "No groups found" "No groups created by root"
+    else
+        while IFS= read -r GROUP; do
+            printRow "$GROUP" "Created by root"
+        done <<< "$GROUPS"
+    fi
+    printFooter
+}
+
 # 3. Check ping, SSH, and Samba
 function checkNetworkServices {
     printHeader "Network Services Check" "Details"
@@ -152,6 +168,10 @@ echo
 
 # List users and groups
 listUsersGroups
+echo
+
+# List groups created by root
+listRootCreatedGroups
 echo
 
 # Check network services (DNS and Ping)
