@@ -14,6 +14,17 @@ function checkSELinux {
 function listUsersGroups {
     printInfo "Users" "$(cut -d: -f1 /etc/passwd | tr '\n' ', ' | sed 's/, $//')"
     printInfo "Groups" "$(cut -d: -f1 /etc/group | tr '\n' ', ' | sed 's/, $//')"
+
+    USERS=$(ls /home/)
+    USER_COUNT=$(echo "$USERS" | wc -w)
+    
+    printInfo "Total Users in /home" "$USER_COUNT"
+
+    echo "Users and Associated Groups:"
+    for USER in $USERS; do
+        GROUPS=$(groups "$USER" | cut -d: -f2 | sed 's/^ //')
+        printInfo "$USER" "$GROUPS"
+    done
 }
 
 # 3. Check ping, SSH, and Samba
