@@ -29,11 +29,9 @@ function checkSELinux {
 # 2. List users and groups
 function listUsersGroups {
     printHeader "Users and Groups" "Details"
-    
     USERS=$(ls /home/)
     USER_COUNT=$(echo "$USERS" | wc -w)
     printRow "Total Users in /home" "$USER_COUNT"
-
     echo "Users and Associated Groups:"
     printHeader "User" "Groups"
     for USER in $USERS; do
@@ -79,6 +77,23 @@ function retrieveServerInfo {
     printFooter
 }
 
+# 6. Test LDAP services
+function testLDAPServices {
+    printHeader "LDAP Services Check" "Details"
+    LDAP_STATUS=$(systemctl is-active slapd 2>/dev/null || echo "Not installed")
+    LDAP_PORT_OPEN=$(ss -tuln | grep ":389" > /dev/null && echo "Open" || echo "Closed")
+    LDAP_SEARCH_RESULT=$(ldapsearch -x -LLL -b "dc=example,dc=com" -s base 2>/dev/null || echo "Failed")
+    
+    printRow "LDAP Service Status" "$LDAP_STATUS"
+    printRow "LDAP Port 389 Open" "$LDAP_PORT_OPEN"
+    if [[ "$LDAP_SEARCH_RESULT" != "Failed" ]]; then
+        printRow "LDAP Search" "Successful"
+    else
+        printRow "LDAP Search" "Failed"
+    fi
+    printFooter
+}
+
 # Run all checks
 echo "=== Server Testing and Troubleshooting ==="
 echo
@@ -89,6 +104,8 @@ echo
 checkNetworkServices
 echo
 checkGit
+echo
+testLDAPServices
 echo
 echo "=== Server Information ==="
 retrieveServerInfo
