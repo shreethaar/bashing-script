@@ -103,18 +103,65 @@ function testLDAPServices {
 
     printFooter
 }
+
+
+# 7. Check HTTPD Service, Firewall Rules, and Open Ports
+function testHTTPDandNetwork {
+    printHeader "HTTPD & Network Check" "Details"
+
+    # Check HTTPD service status
+    HTTPD_STATUS=$(systemctl is-active httpd 2>/dev/null || echo "Not installed")
+    printRow "HTTPD Service Status" "$HTTPD_STATUS"
+
+    # Check if HTTPD process is running
+    HTTPD_PROCESS=$(ps aux | grep '[h]ttpd' > /dev/null && echo "Running" || echo "Not Running")
+    printRow "HTTPD Process Running" "$HTTPD_PROCESS"
+
+    # Check if HTTP/HTTPS ports are open (80 and 443)
+    HTTP_PORT_OPEN=$(ss -tuln | grep ":80" > /dev/null && echo "Open" || echo "Closed")
+    HTTPS_PORT_OPEN=$(ss -tuln | grep ":443" > /dev/null && echo "Open" || echo "Closed")
+    printRow "HTTP Port 80 Open" "$HTTP_PORT_OPEN"
+    printRow "HTTPS Port 443 Open" "$HTTPS_PORT_OPEN"
+
+    # List firewall rules using firewall-cmd
+    FIREWALL_RULES=$(firewall-cmd --list-all 2>/dev/null || echo "Firewall-cmd not installed or inactive")
+    printRow "Firewall Rules" "$FIREWALL_RULES"
+
+    # Check all open ports on the server
+    OPEN_PORTS=$(ss -tuln | awk 'NR>1 {print $5}' | awk -F: '{print $NF}' | sort -n | uniq | tr '\n' ', ')
+    printRow "All Open Ports" "${OPEN_PORTS%,}" # Remove trailing comma
+
+    printFooter
+}
+
 # Run all checks
 echo "=== Server Testing and Troubleshooting ==="
 echo
+
+# Perform SELinux check
 checkSELinux
 echo
+
+# List users and groups
 listUsersGroups
 echo
+
+# Check network services (DNS and Ping)
 checkNetworkServices
 echo
+
+# Check Git version and setup
 checkGit
 echo
+
+# Test LDAP Services
 testLDAPServices
 echo
+
+# Test HTTPD service, firewall rules, and open ports
+testHTTPDandNetwork
+echo
+
+# Retrieve and display server information
 echo "=== Server Information ==="
 retrieveServerInfo
