@@ -317,22 +317,21 @@ function testVSFTPD {
             WRITE_ENABLE=$(grep -i "^write_enable=" "$CONFIG_FILE" | cut -d= -f2)
             WRITE_STATUS="Write access: ${WRITE_ENABLE:-Not specified}"
         else
-            CONFIG_STATUS="Configuration file not found"
-            ANON_STATUS="Unknown"
-            LOCAL_STATUS="Unknown"
-            WRITE_STATUS="Unknown"
+            CONFIG_STATUS="Config file not found"
+            ANON_STATUS="N/A"
+            LOCAL_STATUS="N/A"
+            WRITE_STATUS="N/A"
         fi
-        
-        # Check if FTP port is open (default 21)
-        FTP_PORT_STATUS=$(ss -tuln | grep ":21 " >/dev/null && echo "Open" || echo "Closed")
-        
-        # Check if VSFTPD is running with proper user
-        VSFTPD_PROCESS=$(ps aux | grep [v]sftpd | awk '{print $1}')
         
         printRow "VSFTPD Version" "$VSFTPD_VERSION"
         printRow "Service Status" "$VSFTPD_STATUS"
-        printRow "Configuration" "$CONFIG_STATUS"
+        printRow "Config File Status" "$CONFIG_STATUS"
         printRow "Anonymous Access" "$ANON_STATUS"
-        printRow "Local User Access" "$LOCAL_STATUS"
-        printRow "Write Permission" "$WRITE_STATUS"
-        printRow "FTP Port (21)" "$FTP_PORT_STATUS"
+        printRow "Local Access" "$LOCAL_STATUS"
+        printRow "Write Access" "$WRITE_STATUS"
+    else
+        printRow "VSFTPD" "Not installed"
+    fi
+    
+    printFooter
+}
