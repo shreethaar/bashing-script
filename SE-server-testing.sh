@@ -28,168 +28,247 @@ function printFooter {
 # 1. Check SELinux mode and policies
 function checkSELinux {
     printHeader "SELinux Check" "Details"
-    printRow "SELinux Status" "$(sestatus | grep 'SELinux status' | awk '{print $3}')"
-    printRow "SELinux Mode" "$(sestatus | grep 'Current mode' | awk '{print $3}')"
-    printRow "SELinux Policy" "$(sestatus | grep 'Loaded policy name' | awk '{print $4}')"
+    if command -v sestatus >/dev/null 2>&1; then
+        printRow "SELinux Status" "$(sestatus | grep 'SELinux status' | awk '{print $3}')"
+        printRow "SELinux Mode" "$(sestatus | grep 'Current mode' | awk '{print $3}')"
+        printRow "SELinux Policy" "$(sestatus | grep 'Loaded policy name' | awk '{print $4}')"
+    else
+        printRow "SELinux Status" "SELinux not installed"
+    fi
     printFooter
 }
 
 # 2. List users and groups
 function listUsersGroups {
     printHeader "Users and Groups" "Details"
-    USERS=$(ls /home/)
-    USER_COUNT=$(echo "$USERS" | wc -w)
-    printRow "Total Users in /home" "$USER_COUNT"
-    echo "Users and Associated Groups:"
-    printHeader "User" "Groups"
-    for USER in $USERS; do
-        GROUPS=$(groups "$USER" | cut -d: -f2 | sed 's/^ //')
-        printRow "$USER" "$GROUPS"
-    done
-    printFooter
-}
-
-# 3. List groups created by root
-
-function listRootCreatedGroups {
-    printHeader "Root-Created Groups" "Details"
-    # List all groups created by the root user (typically non-system groups with GID > 1000)
-    GROUPS=$(awk -F: '$3 >= 1000 {print $1}' /etc/group)
-    if [[ -z "$GROUPS" ]]; then
-        printRow "No groups found" "No groups created by root"
+    if [ -d "/home" ]; then
+        USERS=$(ls /home/)
+        USER_COUNT=$(echo "$USERS" | wc -w)
+        printRow "Total Users in /home" "$USER_COUNT"
+        echo "Users and Associated Groups:"
+        printHeader "User" "Groups"
+        for USER in $USERS; do
+            if id "$USER" >/dev/null 2>&1; then
+                GROUPS=$(groups "$USER" 2>/dev/null | cut -d: -f2 | sed 's/^ //')
+                printRow "$USER" "${GROUPS:-(no groups)}"
+            fi
+        done
     else
-        while IFS= read -r GROUP; do
-            printRow "$GROUP" "Created by root"
-        done <<< "$GROUPS"
+        printRow "Error" "Home directory not found"
     fi
     printFooter
 }
 
-# 3. Check ping, SSH, and Samba
+# 3. List groups created by root
+function listRootCreatedGroups {
+    printHeader "Root-Created Groups" "Details"
+    if [ -f "/etc/group" ]; then
+        # List all groups created by the root user (typically non-system groups with GID > 1000)
+        GROUPS=$(awk -F: '$3 >= 1000 {print $1}' /etc/group)
+        if [[ -z "$GROUPS" ]]; then
+            printRow "No groups found" "No groups created by root"
+        else
+            while IFS= read -r GROUP; do
+                printRow "$GROUP" "Created by root"
+            done <<< "$GROUPS"
+        fi
+    else
+        printRow "Error" "Group file not found"
+    fi
+    printFooter
+}
+
+# 4. Check network services
 function checkNetworkServices {
     printHeader "Network Services Check" "Details"
-    PING_RESULT=$(ping -c 1 -W 2 google.com > /dev/null && echo "Reachable" || echo "Unreachable")
+    # Test internet connectivity with multiple hosts
+    PING_HOSTS=("8.8.8.8" "1.1.1.1" "google.com")
+    PING_RESULT="Unreachable"
+    for host in "${PING_HOSTS[@]}"; do
+        if ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
+            PING_RESULT="Reachable (via $host)"
+            break
+        fi
+    done
+    
     SSH_RESULT=$(systemctl is-active sshd 2>/dev/null || echo "Not installed")
     SAMBA_RESULT=$(systemctl is-active smb 2>/dev/null || echo "Not installed")
-    printRow "Ping to External Network" "$PING_RESULT"
+    printRow "Internet Connectivity" "$PING_RESULT"
     printRow "SSH Service" "$SSH_RESULT"
     printRow "Samba Service" "$SAMBA_RESULT"
     printFooter
 }
 
-# 4. Check Git setup
+# 5. Check Git setup
 function checkGit {
     printHeader "Git Setup Check" "Details"
-    GIT_VERSION=$(git --version 2>/dev/null || echo "Git not installed")
-    GIT_STATUS=$(git status 2>/dev/null || echo "No Git repository")
+    if command -v git >/dev/null 2>&1; then
+        GIT_VERSION=$(git --version)
+        if git rev-parse --git-dir >/dev/null 2>&1; then
+            GIT_STATUS=$(git status --porcelain)
+            if [[ -z "$GIT_STATUS" ]]; then
+                GIT_STATUS="Clean repository"
+            else
+                GIT_STATUS="Modified files present"
+            fi
+        else
+            GIT_STATUS="No Git repository"
+        fi
+    else
+        GIT_VERSION="Git not installed"
+        GIT_STATUS="N/A"
+    fi
     printRow "Git Version" "$GIT_VERSION"
     printRow "Git Repository Status" "$GIT_STATUS"
     printFooter
 }
 
-# 5. Retrieve server information
+# 6. Retrieve server information
 function retrieveServerInfo {
     printHeader "Server Information" "Details"
-    printRow "Hostname" "$(uname -n)"
-    printRow "IP Address" "$(hostname -I | awk '{print $1}')"
-    printRow "OS Version" "$(cat /etc/*release* | grep PRETTY_NAME | awk -F'=' '{print $2}' | tr -d '"')"
+    printRow "Hostname" "$(hostname -f 2>/dev/null || hostname)"
+    
+    # Get primary IP address more reliably
+    IP_ADDR=$(ip -4 addr show scope global | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
+    printRow "IP Address" "${IP_ADDR:-Not available}"
+    
+    # Get OS information more reliably
+    if [ -f "/etc/os-release" ]; then
+        source "/etc/os-release"
+        printRow "OS Version" "${PRETTY_NAME:-Unknown}"
+    else
+        printRow "OS Version" "Unknown"
+    fi
+    
     printRow "Kernel Version" "$(uname -sr)"
-    printRow "CPU Model" "$(grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2 | sed 's/^ //')"
-    printRow "CPU Count" "$(grep -c processor /proc/cpuinfo)"
-    printRow "Memory Size" "$(grep MemTotal /proc/meminfo | awk '{print $2,$3}')"
-    printRow "Disk Size" "$(lsblk --nodeps --noheadings --output NAME,SIZE)"
+    
+    # CPU information
+    if [ -f "/proc/cpuinfo" ]; then
+        CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d':' -f2 | sed 's/^ //')
+        CPU_COUNT=$(grep -c processor /proc/cpuinfo)
+        printRow "CPU Model" "${CPU_MODEL:-Unknown}"
+        printRow "CPU Count" "$CPU_COUNT"
+    fi
+    
+    # Memory information
+    if [ -f "/proc/meminfo" ]; then
+        MEM_TOTAL=$(awk '/MemTotal/ {printf "%.2f GB", $2/1024/1024}' /proc/meminfo)
+        printRow "Memory Size" "${MEM_TOTAL:-Unknown}"
+    fi
+    
+    # Disk information
+    if command -v lsblk >/dev/null 2>&1; then
+        DISK_INFO=$(lsblk --nodeps --noheadings --output NAME,SIZE | awk '{printf "%s: %s, ", $1, $2}' | sed 's/, $//')
+        printRow "Disk Size" "${DISK_INFO:-Unknown}"
+    fi
     printFooter
 }
 
-# 6. Test LDAP services
+# 7. Test LDAP services
 function testLDAPServices {
     printHeader "LDAP Services Check" "Details"
-    # Check if slapd service is active
-    LDAP_STATUS=$(systemctl is-active slapd 2>/dev/null || echo "Not installed")
+    
+    # Check if LDAP client tools are installed
+    if command -v ldapsearch >/dev/null 2>&1; then
+        LDAP_STATUS=$(systemctl is-active slapd 2>/dev/null || echo "Not installed")
+        LDAP_PORT_OPEN=$(ss -tuln | grep ":389" >/dev/null 2>&1 && echo "Open" || echo "Closed")
+        
+        # Check multiple possible LDAP config locations
+        for conf in "/etc/ldap/slapd.conf" "/etc/openldap/slapd.conf"; do
+            if [ -f "$conf" ]; then
+                LDAP_CONFIG="Exists ($conf)"
+                break
+            fi
+        done
+        LDAP_CONFIG=${LDAP_CONFIG:-"Missing"}
+        
+        LDAP_PROCESS=$(pgrep slapd >/dev/null && echo "Running" || echo "Not Running")
+        
+        # Check multiple possible database locations
+        for db_path in "/var/lib/ldap" "/var/lib/openldap"; do
+            if [ -d "$db_path" ]; then
+                LDAP_DB_ACCESS="Accessible ($db_path)"
+                break
+            fi
+        done
+        LDAP_DB_ACCESS=${LDAP_DB_ACCESS:-"Not Found"}
+    else
+        LDAP_STATUS="LDAP tools not installed"
+        LDAP_PORT_OPEN="N/A"
+        LDAP_CONFIG="N/A"
+        LDAP_PROCESS="N/A"
+        LDAP_DB_ACCESS="N/A"
+    fi
+    
     printRow "LDAP Service Status" "$LDAP_STATUS"
-
-    # Check if the LDAP port (389) is open
-    LDAP_PORT_OPEN=$(ss -tuln | grep ":389" > /dev/null && echo "Open" || echo "Closed")
-    printRow "LDAP Port 389 Open" "$LDAP_PORT_OPEN"
-
-    # Verify if the LDAP configuration files exist and are accessible
-    LDAP_CONFIG=$(test -f /etc/ldap/slapd.conf && echo "Exists" || echo "Missing")
-    printRow "LDAP Configuration File" "$LDAP_CONFIG"
-
-    # Check if the slapd process is running
-    LDAP_PROCESS=$(ps aux | grep '[s]lapd' > /dev/null && echo "Running" || echo "Not Running")
-    printRow "LDAP Process Running" "$LDAP_PROCESS"
-
-    # Check the database directory permissions (replace with actual path if needed)
-    DB_PATH="/var/lib/ldap"
-    LDAP_DB_ACCESS=$(test -d "$DB_PATH" && echo "Accessible" || echo "Not Found/Accessible")
-    printRow "LDAP Database Directory" "$LDAP_DB_ACCESS"
-
+    printRow "LDAP Port 389" "$LDAP_PORT_OPEN"
+    printRow "LDAP Configuration" "$LDAP_CONFIG"
+    printRow "LDAP Process" "$LDAP_PROCESS"
+    printRow "LDAP Database" "$LDAP_DB_ACCESS"
     printFooter
 }
 
-
-# 7. Check HTTPD Service, Firewall Rules, and Open Ports
+# 8. Check HTTPD Service, Firewall Rules, and Open Ports
 function testHTTPDandNetwork {
     printHeader "HTTPD & Network Check" "Details"
-
-    # Check HTTPD service status
-    HTTPD_STATUS=$(systemctl is-active httpd 2>/dev/null || echo "Not installed")
-    printRow "HTTPD Service Status" "$HTTPD_STATUS"
-
-    # Check if HTTPD process is running
-    HTTPD_PROCESS=$(ps aux | grep '[h]ttpd' > /dev/null && echo "Running" || echo "Not Running")
-    printRow "HTTPD Process Running" "$HTTPD_PROCESS"
-
-    # Check if HTTP/HTTPS ports are open (80 and 443)
-    HTTP_PORT_OPEN=$(ss -tuln | grep ":80" > /dev/null && echo "Open" || echo "Closed")
-    HTTPS_PORT_OPEN=$(ss -tuln | grep ":443" > /dev/null && echo "Open" || echo "Closed")
-    printRow "HTTP Port 80 Open" "$HTTP_PORT_OPEN"
-    printRow "HTTPS Port 443 Open" "$HTTPS_PORT_OPEN"
-
-    # List firewall rules using firewall-cmd
-    FIREWALL_RULES=$(firewall-cmd --list-all 2>/dev/null || echo "Firewall-cmd not installed or inactive")
-    printRow "Firewall Rules" "$FIREWALL_RULES"
-
-    # Check all open ports on the server
-    OPEN_PORTS=$(ss -tuln | awk 'NR>1 {print $5}' | awk -F: '{print $NF}' | sort -n | uniq | tr '\n' ', ')
-    printRow "All Open Ports" "${OPEN_PORTS%,}" # Remove trailing comma
-
+    
+    # Check for both Apache and Nginx
+    if systemctl is-active httpd >/dev/null 2>&1; then
+        HTTPD_STATUS="Active (Apache)"
+    elif systemctl is-active apache2 >/dev/null 2>&1; then
+        HTTPD_STATUS="Active (Apache2)"
+    elif systemctl is-active nginx >/dev/null 2>&1; then
+        HTTPD_STATUS="Active (Nginx)"
+    else
+        HTTPD_STATUS="Not installed/inactive"
+    fi
+    
+    # Check web server process
+    if pgrep -f "httpd|apache2|nginx" >/dev/null; then
+        HTTPD_PROCESS="Running"
+    else
+        HTTPD_PROCESS="Not Running"
+    fi
+    
+    # Check ports
+    HTTP_PORT_OPEN=$(ss -tuln | grep -E ":80\s" >/dev/null && echo "Open" || echo "Closed")
+    HTTPS_PORT_OPEN=$(ss -tuln | grep -E ":443\s" >/dev/null && echo "Open" || echo "Closed")
+    
+    # Check firewall status and rules
+    if command -v firewall-cmd >/dev/null 2>&1; then
+        FIREWALL_RULES=$(firewall-cmd --list-all 2>/dev/null)
+    elif command -v ufw >/dev/null 2>&1; then
+        FIREWALL_RULES=$(ufw status 2>/dev/null)
+    elif command -v iptables >/dev/null 2>&1; then
+        FIREWALL_RULES=$(iptables -L -n 2>/dev/null)
+    else
+        FIREWALL_RULES="No firewall detected"
+    fi
+    
+    # Get list of open ports
+    OPEN_PORTS=$(ss -tuln | awk 'NR>1 {print $5}' | grep -v "\*" | cut -d: -f2 | sort -nu | tr '\n' ',' | sed 's/,$//')
+    
+    printRow "Web Server Status" "$HTTPD_STATUS"
+    printRow "Web Server Process" "$HTTPD_PROCESS"
+    printRow "HTTP Port 80" "$HTTP_PORT_OPEN"
+    printRow "HTTPS Port 443" "$HTTPS_PORT_OPEN"
+    printRow "Firewall Status" "${FIREWALL_RULES:0:30}..."
+    printRow "Open Ports" "${OPEN_PORTS:-None}"
     printFooter
 }
 
-# Run all checks
+# Main execution
 echo "=== Server Testing and Troubleshooting ==="
+echo "Start Time: $(date)"
 echo
 
-# Perform SELinux check
-checkSELinux
-echo
+# Run all checks with error handling
+for check in checkSELinux listUsersGroups listRootCreatedGroups checkNetworkServices checkGit testLDAPServices testHTTPDandNetwork retrieveServerInfo; do
+    echo "Running $check..."
+    if ! $check; then
+        echo "Warning: $check encountered an error"
+    fi
+    echo
+done
 
-# List users and groups
-listUsersGroups
-echo
-
-# List groups created by root
-listRootCreatedGroups
-echo
-
-# Check network services (DNS and Ping)
-checkNetworkServices
-echo
-
-# Check Git version and setup
-checkGit
-echo
-
-# Test LDAP Services
-testLDAPServices
-echo
-
-# Test HTTPD service, firewall rules, and open ports
-testHTTPDandNetwork
-echo
-
-# Retrieve and display server information
-echo "=== Server Information ==="
-retrieveServerInfo
+echo "End Time: $(date)"
