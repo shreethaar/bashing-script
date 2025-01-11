@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Ensure the script is run with sudo or as root
+if [[ "$EUID" -ne 0 ]]; then
+    echo "Error: This script must be run as root or with sudo privileges."
+    exit 1
+fi
+
+# Function for formatted output
+function printInfo { printf "%-30s: %s\n" "$1" "$2"; }
 # Function for table rows
 function printRow {
     printf "| %-28s | %-30s |\n" "$1" "$2"
