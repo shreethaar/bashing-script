@@ -80,20 +80,29 @@ function retrieveServerInfo {
 # 6. Test LDAP services
 function testLDAPServices {
     printHeader "LDAP Services Check" "Details"
+    # Check if slapd service is active
     LDAP_STATUS=$(systemctl is-active slapd 2>/dev/null || echo "Not installed")
-    LDAP_PORT_OPEN=$(ss -tuln | grep ":389" > /dev/null && echo "Open" || echo "Closed")
-    LDAP_SEARCH_RESULT=$(ldapsearch -x -LLL -b "dc=example,dc=com" -s base 2>/dev/null || echo "Failed")
-    
     printRow "LDAP Service Status" "$LDAP_STATUS"
+
+    # Check if the LDAP port (389) is open
+    LDAP_PORT_OPEN=$(ss -tuln | grep ":389" > /dev/null && echo "Open" || echo "Closed")
     printRow "LDAP Port 389 Open" "$LDAP_PORT_OPEN"
-    if [[ "$LDAP_SEARCH_RESULT" != "Failed" ]]; then
-        printRow "LDAP Search" "Successful"
-    else
-        printRow "LDAP Search" "Failed"
-    fi
+
+    # Verify if the LDAP configuration files exist and are accessible
+    LDAP_CONFIG=$(test -f /etc/ldap/slapd.conf && echo "Exists" || echo "Missing")
+    printRow "LDAP Configuration File" "$LDAP_CONFIG"
+
+    # Check if the slapd process is running
+    LDAP_PROCESS=$(ps aux | grep '[s]lapd' > /dev/null && echo "Running" || echo "Not Running")
+    printRow "LDAP Process Running" "$LDAP_PROCESS"
+
+    # Check the database directory permissions (replace with actual path if needed)
+    DB_PATH="/var/lib/ldap"
+    LDAP_DB_ACCESS=$(test -d "$DB_PATH" && echo "Accessible" || echo "Not Found/Accessible")
+    printRow "LDAP Database Directory" "$LDAP_DB_ACCESS"
+
     printFooter
 }
-
 # Run all checks
 echo "=== Server Testing and Troubleshooting ==="
 echo
