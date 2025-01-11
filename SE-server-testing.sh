@@ -38,19 +38,33 @@ function checkSELinux {
     printFooter
 }
 
-# 2. List users and groups
+# 2. List users and groups with relationships
 function listUsersGroups {
     printHeader "Users and Groups" "Details"
     if [ -d "/home" ]; then
         USERS=$(ls /home/)
         USER_COUNT=$(echo "$USERS" | wc -w)
         printRow "Total Users in /home" "$USER_COUNT"
-        echo "Users and Associated Groups:"
-        printHeader "User" "Groups"
+        echo
+        printHeader "User" "Primary & Secondary Groups"
         for USER in $USERS; do
             if id "$USER" >/dev/null 2>&1; then
-                GROUPS=$(groups "$USER" 2>/dev/null | cut -d: -f2 | sed 's/^ //')
-                printRow "$USER" "${GROUPS:-(no groups)}"
+                # Get primary group
+                PRIMARY_GROUP=$(id -gn "$USER" 2>/dev/null)
+                # Get all groups
+                ALL_GROUPS=$(groups "$USER" 2>/dev/null | cut -d: -f2 | sed 's/^ //')
+                # Format the output to show primary group first
+                if [ -n "$PRIMARY_GROUP" ]; then
+                    GROUP_INFO="Primary: $PRIMARY_GROUP"
+                    # Get secondary groups by removing primary group
+                    SECONDARY_GROUPS=$(echo "$ALL_GROUPS" | sed "s/$PRIMARY_GROUP//" | sed 's/^ *//' | sed 's/ /, /g')
+                    if [ -n "$SECONDARY_GROUPS" ]; then
+                        GROUP_INFO="$GROUP_INFO, Secondary: $SECONDARY_GROUPS"
+                    fi
+                else
+                    GROUP_INFO="(no groups)"
+                fi
+                printRow "$USER" "${GROUP_INFO:-(no groups)}"
             fi
         done
     else
@@ -59,19 +73,32 @@ function listUsersGroups {
     printFooter
 }
 
-# 3. List groups created by root
+# 3. List groups and their members
 function listRootCreatedGroups {
-    printHeader "Root-Created Groups" "Details"
+    printHeader "Group Membership Details" "Members"
     if [ -f "/etc/group" ]; then
-        # List all groups created by the root user (typically non-system groups with GID > 1000)
-        GROUPS=$(awk -F: '$3 >= 1000 {print $1}' /etc/group)
-        if [[ -z "$GROUPS" ]]; then
-            printRow "No groups found" "No groups created by root"
-        else
-            while IFS= read -r GROUP; do
-                printRow "$GROUP" "Created by root"
-            done <<< "$GROUPS"
-        fi
+        # List all groups created by root (GID >= 1000)
+        while IFS=':' read -r GROUP_NAME GROUP_PASS GROUP_ID GROUP_MEMBERS; do
+            if [ "$GROUP_ID" -ge 1000 ]; then
+                # Get all users who have this as their primary group
+                PRIMARY_USERS=$(awk -F: "\$4 == $GROUP_ID {print \$1}" /etc/passwd | tr '\n' ',' | sed 's/,$//')
+                
+                # Format the output
+                MEMBER_INFO=""
+                if [ -n "$PRIMARY_USERS" ]; then
+                    MEMBER_INFO="Primary: $PRIMARY_USERS"
+                fi
+                if [ -n "$GROUP_MEMBERS" ]; then
+                    if [ -n "$MEMBER_INFO" ]; then
+                        MEMBER_INFO="$MEMBER_INFO, Secondary: $GROUP_MEMBERS"
+                    else
+                        MEMBER_INFO="Secondary: $GROUP_MEMBERS"
+                    fi
+                fi
+                
+                printRow "$GROUP_NAME" "${MEMBER_INFO:-No members}"
+            fi
+        done < /etc/group
     else
         printRow "Error" "Group file not found"
     fi
