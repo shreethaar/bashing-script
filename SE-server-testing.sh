@@ -285,6 +285,83 @@ function testHTTPDandNetwork {
     printFooter
 }
 
+
+# Add this new function to your script:
+
+function testVSFTPD {
+    printHeader "VSFTPD Service Check" "Details"
+    
+    # Check if vsftpd is installed
+    if command -v vsftpd >/dev/null 2>&1; then
+        VSFTPD_VERSION=$(vsftpd -v 0>&1 2>&1 | head -n1 || echo "Version unknown")
+        
+        # Check service status
+        VSFTPD_STATUS=$(systemctl is-active vsftpd 2>/dev/null || echo "Not running")
+        
+        # Check if config file exists and is readable
+        CONFIG_FILE="/etc/vsftpd/vsftpd.conf"
+        if [ ! -f "$CONFIG_FILE" ]; then
+            CONFIG_FILE="/etc/vsftpd.conf"
+        fi
+        
+        if [ -f "$CONFIG_FILE" ]; then
+            CONFIG_STATUS="Found at $CONFIG_FILE"
+            
+            # Check anonymous access
+            ANON_ENABLE=$(grep -i "^anon_enable=" "$CONFIG_FILE" | cut -d= -f2)
+            ANON_STATUS="Anonymous access: ${ANON_ENABLE:-Not specified}"
+            
+            # Check local user access
+            LOCAL_ENABLE=$(grep -i "^local_enable=" "$CONFIG_FILE" | cut -d= -f2)
+            LOCAL_STATUS="Local access: ${LOCAL_ENABLE:-Not specified}"
+            
+            # Check write permissions
+            WRITE_ENABLE=$(grep -i "^write_enable=" "$CONFIG_FILE" | cut -d= -f2)
+            WRITE_STATUS="Write access: ${WRITE_ENABLE:-Not specified}"
+        else
+            CONFIG_STATUS="Configuration file not found"
+            ANON_STATUS="Unknown"
+            LOCAL_STATUS="Unknown"
+            WRITE_STATUS="Unknown"
+        fi
+        
+        # Check if FTP port is open (default 21)
+        FTP_PORT_STATUS=$(ss -tuln | grep ":21 " >/dev/null && echo "Open" || echo "Closed")
+        
+        # Check if VSFTPD is running with proper user
+        VSFTPD_PROCESS=$(ps aux | grep [v]sftpd | awk '{print $1}')
+        
+        printRow "VSFTPD Version" "$VSFTPD_VERSION"
+        printRow "Service Status" "$VSFTPD_STATUS"
+        printRow "Configuration" "$CONFIG_STATUS"
+        printRow "Anonymous Access" "$ANON_STATUS"
+        printRow "Local User Access" "$LOCAL_STATUS"
+        printRow "Write Permission" "$WRITE_STATUS"
+        printRow "FTP Port (21)" "$FTP_PORT_STATUS"
+        printRow "Running as User" "${VSFTPD_PROCESS:-Not running}"
+        
+        # If service is active, try to get connection info
+        if [ "$VSFTPD_STATUS" = "active" ]; then
+            # Get listening addresses
+            LISTEN_ADDRESSES=$(ss -tuln | grep ":21 " | awk '{print $5}')
+            printRow "Listening On" "${LISTEN_ADDRESSES:-Not listening}"
+            
+            # Check for SSL/TLS configuration
+            SSL_ENABLE=$(grep -i "^ssl_enable=" "$CONFIG_FILE" | cut -d= -f2)
+            printRow "SSL/TLS Enabled" "${SSL_ENABLE:-Not specified}"
+        fi
+        
+    else
+        printRow "VSFTPD Status" "Not installed"
+    fi
+    
+    printFooter
+}
+
+# Add this line to your main execution section after the other tests:
+echo "Running VSFTPD service check..."
+testVSFTPD
+echo
 # Main execution
 echo "=== Server Testing and Troubleshooting ==="
 echo "Start Time: $(date)"
